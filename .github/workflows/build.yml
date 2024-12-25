@@ -20,6 +20,7 @@ jobs:
       - name: Build EPG reader
         run: mvn package
       - name: Upload build artifact
-        uses: astertom/nexus-upload-artifact@v1
+        uses: actions/upload-artifact@v4.5.0
         with:
-          pattern: target/ts*.jar
+          name: ts-epg-reader
+          path: target/ts*.jar
