@@ -121,7 +121,7 @@
                     card.classList.add("now");
                 }
                 card.onclick = () => {
-                    window.open("events/" + card.getAttribute("event") + ".html", "_blank");
+                    window.open("./events/" + card.getAttribute("event") + ".html", "_blank");
                 };
             }
         </script>

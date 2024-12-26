@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,7 @@ import org.jsoup.nodes.Element;
 public class Main {
 
     private static final DateFormat DATE_FMT = new SimpleDateFormat("dd MMM", Locale.ENGLISH);
+    private static final DateFormat FULL_DATE = new SimpleDateFormat("dd.MM.yyyy hh:mm");
     private static final DateFormat TIME_FMT = new SimpleDateFormat("HH:mm");
 
     public static void main(String[] args) throws IOException {
@@ -101,57 +103,71 @@ public class Main {
         System.err.println("Constructing HTML documents...");
         Element channelsEl = doc.getElementById("channels");
         Element programsEl = doc.getElementById("programs");
-        for (Map.Entry<String, List<FriendlyEvent>> entry : channels.entrySet()) {
-            Element channel = channelsEl.appendElement("th");
-            channel.html(entry.getKey());
-            Element cardContainer = programsEl.appendElement("td").appendElement("div");
-            cardContainer.addClass("program-cards");
-            for (FriendlyEvent event : entry.getValue()) {
-                String title = event.name();
-                if (title.length() > 40) title = title.substring(0, 37) + "...";
-                String id = "0x" + Integer.toHexString(event.id());
-                Element programCard = cardContainer.appendElement("div");
-                programCard.addClass("program-card");
-                programCard.attr("start-time", Long.toString(event.startTime()));
-                programCard.attr("end-time", Long.toString(event.endTime()));
-                programCard.attr("event", entry.getKey() + "/" + id);
-                Element titleSpan = programCard.appendElement("span");
-                titleSpan.addClass("card-title");
-                titleSpan.html(title);
-                programCard.appendElement("br");
-                Element dateSpan = programCard.appendElement("span");
-                dateSpan.addClass("card-time");
-                dateSpan.html(DATE_FMT.format(new Date(event.startTime())));
-                programCard.append(" ");
-                Element timeSpan = programCard.appendElement("span");
-                timeSpan.addClass("card-time");
-                timeSpan
-                        .html(TIME_FMT.format(new Date(event.startTime())) + " - "
-                                + TIME_FMT.format(new Date(event.endTime())));
+        try (PrintWriter csvWriter = new PrintWriter(new File(outputDir, "epg.csv"), StandardCharsets.UTF_8)) {
+            csvWriter.println("Channel;Event Name;Event ID;Start;End;Duration;Age rating;Genre");
+            for (Map.Entry<String, List<FriendlyEvent>> entry : channels.entrySet()) {
+                Element channel = channelsEl.appendElement("th");
+                channel.html(entry.getKey());
+                Element cardContainer = programsEl.appendElement("td").appendElement("div");
+                cardContainer.addClass("program-cards");
+                for (FriendlyEvent event : entry.getValue()) {
+                    csvWriter
+                            .println(String
+                                    .format("%s;%s;%s;%s;%s;%s;%s;%s", entry.getKey(), event.name(), event.id(),
+                                            FULL_DATE.format(new Date(event.startTime())),
+                                            FULL_DATE.format(new Date(event.endTime())),
+                                            Duration
+                                                    .ofMillis(event.endTime() - event.startTime())
+                                                    .toString()
+                                                    .substring(2),
+                                            event.ageRating() == -1 ? "" : event.ageRating(),
+                                            event.contentTypes().isEmpty() ? "" : event.contentTypes().get(0)));
+                    String title = event.name();
+                    if (title.length() > 40) title = title.substring(0, 37) + "...";
+                    String id = "0x" + Integer.toHexString(event.id());
+                    Element programCard = cardContainer.appendElement("div");
+                    programCard.addClass("program-card");
+                    programCard.attr("start-time", Long.toString(event.startTime()));
+                    programCard.attr("end-time", Long.toString(event.endTime()));
+                    programCard.attr("event", entry.getKey() + "/" + id);
+                    Element titleSpan = programCard.appendElement("span");
+                    titleSpan.addClass("card-title");
+                    titleSpan.html(title);
+                    programCard.appendElement("br");
+                    Element dateSpan = programCard.appendElement("span");
+                    dateSpan.addClass("card-time");
+                    dateSpan.html(DATE_FMT.format(new Date(event.startTime())));
+                    programCard.append(" ");
+                    Element timeSpan = programCard.appendElement("span");
+                    timeSpan.addClass("card-time");
+                    timeSpan
+                            .html(TIME_FMT.format(new Date(event.startTime())) + " - "
+                                    + TIME_FMT.format(new Date(event.endTime())));
 
-                String details = String
-                        .format("""
-                                <strong>Title: </strong>%s<br/>
-                                <strong>Channel: </strong>%s<br/>
-                                <strong>Emission date: </strong>%s<br/>
-                                <strong>Duration: </strong>%s (to %s)<br/>
-                                <strong>Genre: </strong>%s<br/>
-                                <strong>Age rating: </strong>%s<br/>
-                                <br/>
-                                %s
-                                """, event.name(), entry.getKey(),
-                                DATE_FMT.format(new Date(event.startTime())) + " "
-                                        + TIME_FMT.format(new Date(event.startTime())),
-                                Duration.ofMillis(event.endTime() - event.startTime()).toString().substring(2),
-                                TIME_FMT.format(new Date(event.endTime())),
-                                String.join(", ", event.contentTypes().toArray(new String[0])),
-                                event.ageRating() == -1 ? "None" : event.ageRating() + "+", event.description());
-                File eventFile = new File(outputDir, "events/" + entry.getKey() + "/" + id + ".html");
-                eventFile.getParentFile().mkdirs();
-                try (Writer wr = new FileWriter(eventFile)) {
-                    wr.write(String.format(detailsHTML.toString(), event.name(), details));
-                } catch (Exception e) {
-                    e.printStackTrace();
+                    String details = String
+                            .format("""
+                                    <strong>Title: </strong>%s<br/>
+                                    <strong>Channel: </strong>%s<br/>
+                                    <strong>Emission date: </strong>%s<br/>
+                                    <strong>Duration: </strong>%s (to %s)<br/>
+                                    <strong>Genre: </strong>%s<br/>
+                                    <strong>Age rating: </strong>%s<br/>
+                                    <br/>
+                                    %s
+                                    """, event.name(), entry.getKey(),
+                                    DATE_FMT.format(new Date(event.startTime())) + " "
+                                            + TIME_FMT.format(new Date(event.startTime())),
+                                    Duration.ofMillis(event.endTime() - event.startTime()).toString().substring(2),
+                                    TIME_FMT.format(new Date(event.endTime())),
+                                    String.join(", ", event.contentTypes().toArray(new String[0])),
+                                    event.ageRating() == -1 ? "None" : event.ageRating() + "+", event.description());
+                    File eventFile = new File(outputDir, "events/" + entry.getKey() + "/" + id + ".html");
+                    eventFile.getParentFile().mkdirs();
+                    try (Writer wr = new FileWriter(eventFile)) {
+                        wr.write(String.format(detailsHTML.toString(), event.name(), details));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }
