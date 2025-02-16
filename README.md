@@ -6,7 +6,7 @@ See [actions](https://github.com/Defective4/ts-epg-reader/actions) for latest ar
 
 # Usage
 ```bash
-java -jar java -jar ts-epg-reader.jar [output dir] [input files...]
+java -jar java -jar ts-epg-reader.jar [output dir] [locale] [input files...]
 ```
 
 # Credits

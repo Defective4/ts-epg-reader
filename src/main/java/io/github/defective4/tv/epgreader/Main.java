@@ -3,6 +3,7 @@ package io.github.defective4.tv.epgreader;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.Reader;
@@ -17,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -24,14 +26,12 @@ import org.jsoup.nodes.Element;
 
 public class Main {
 
-    private static final DateFormat DATE_FMT = new SimpleDateFormat("dd MMM", Locale.ENGLISH);
-    private static final DateFormat FULL_DATE = new SimpleDateFormat("dd.MM.yyyy hh:mm");
     private static final DateFormat TIME_FMT = new SimpleDateFormat("HH:mm");
 
     public static void main(String[] args) throws IOException {
         String file = new File(Main.class.getProtectionDomain().getCodeSource().getLocation().getFile()).getName();
-        if (args.length < 2) {
-            System.err.println("Usage: java -jar " + file + " [output dir] [input files...]");
+        if (args.length < 3) {
+            System.err.println("Usage: java -jar " + file + " [output dir] [locale] [input files...]");
             System.exit(3);
             return;
         }
@@ -48,8 +48,25 @@ public class Main {
             return;
         }
 
+        String localeName = args[1].toLowerCase();
+        Properties locale = new Properties();
+        try (InputStream is = Main.class.getResourceAsStream("/lang/" + localeName + ".properties")) {
+            if (is != null) {
+                try (Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+                    locale.load(reader);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        Locale loc = new Locale.Builder().setLanguage(localeName.toUpperCase()).build();
+        DateFormat dateFmt = new SimpleDateFormat(locale.getProperty("date_fmt", "dd MMM"), loc);
+        DateFormat dateFmtExt = new SimpleDateFormat(locale.getProperty("date_fmt_ext", "dd MMMM"), loc);
+        DateFormat dateFmtYear = new SimpleDateFormat(locale.getProperty("date_fmt_year", "dd.MM.yyyy"), loc);
+        DateFormat fullDate = new SimpleDateFormat(locale.getProperty("date_fmt_year", "dd.MM.yyyy") + " hh:mm");
+
         List<File> inputFiles = new ArrayList<>();
-        for (int i = 1; i < args.length; i++) {
+        for (int i = 2; i < args.length; i++) {
             File f = new File(args[i]);
             if (!f.isFile()) {
                 System.err.println("File " + f + " is not a valid file!");
@@ -101,6 +118,8 @@ public class Main {
 
         Document doc = Jsoup.parse(viewerHTML.toString());
         System.err.println("Constructing HTML documents...");
+        doc.getElementById("epg-title").html(locale.getProperty("epg_header", "TV Electronic Program Guide"));
+        doc.getElementById("epg-date").html(dateFmtYear.format(new Date(System.currentTimeMillis())));
         Element channelsEl = doc.getElementById("channels");
         Element programsEl = doc.getElementById("programs");
         try (PrintWriter csvWriter = new PrintWriter(new File(outputDir, "epg.csv"), StandardCharsets.UTF_8)) {
@@ -114,8 +133,8 @@ public class Main {
                     csvWriter
                             .println(String
                                     .format("%s;%s;%s;%s;%s;%s;%s;%s", entry.getKey(), event.name(), event.id(),
-                                            FULL_DATE.format(new Date(event.startTime())),
-                                            FULL_DATE.format(new Date(event.endTime())),
+                                            fullDate.format(new Date(event.startTime())),
+                                            fullDate.format(new Date(event.endTime())),
                                             Duration
                                                     .ofMillis(event.endTime() - event.startTime())
                                                     .toString()
@@ -136,7 +155,7 @@ public class Main {
                     programCard.appendElement("br");
                     Element dateSpan = programCard.appendElement("span");
                     dateSpan.addClass("card-time");
-                    dateSpan.html(DATE_FMT.format(new Date(event.startTime())));
+                    dateSpan.html(dateFmt.format(new Date(event.startTime())));
                     programCard.append(" ");
                     Element timeSpan = programCard.appendElement("span");
                     timeSpan.addClass("card-time");
@@ -146,21 +165,28 @@ public class Main {
 
                     String details = String
                             .format("""
-                                    <strong>Title: </strong>%s<br/>
-                                    <strong>Channel: </strong>%s<br/>
-                                    <strong>Emission date: </strong>%s<br/>
-                                    <strong>Duration: </strong>%s (to %s)<br/>
-                                    <strong>Genre: </strong>%s<br/>
-                                    <strong>Age rating: </strong>%s<br/>
+                                    <strong>%s: </strong>%s<br/>
+                                    <strong>%s: </strong>%s<br/>
+                                    <strong>%s: </strong>%s<br/>
+                                    <strong>%s: </strong>%s (to %s)<br/>
+                                    <strong>%s: </strong>%s<br/>
+                                    <strong>%s: </strong>%s<br/>
                                     <br/>
                                     %s
-                                    """, event.name(), entry.getKey(),
-                                    DATE_FMT.format(new Date(event.startTime())) + " "
+                                    """, locale.getProperty("title", "Title"), event.name(),
+                                    locale.getProperty("channel", "Channel"), entry.getKey(),
+                                    locale.getProperty("e_date", "Emission date"),
+                                    dateFmtExt.format(new Date(event.startTime())) + " "
+                                            + locale.getProperty("at", "at") + " "
                                             + TIME_FMT.format(new Date(event.startTime())),
+                                    locale.getProperty("duration", "Duration"),
                                     Duration.ofMillis(event.endTime() - event.startTime()).toString().substring(2),
-                                    TIME_FMT.format(new Date(event.endTime())),
+                                    TIME_FMT.format(new Date(event.endTime())), locale.getProperty("genre", "Genre"),
                                     String.join(", ", event.contentTypes().toArray(new String[0])),
-                                    event.ageRating() == -1 ? "None" : event.ageRating() + "+", event.description());
+                                    locale.getProperty("age", "Age rating"),
+                                    event.ageRating() == -1 ? locale.getProperty("none", "None")
+                                            : event.ageRating() + "+",
+                                    event.description());
                     File eventFile = new File(outputDir, "events/" + entry.getKey() + "/" + id + ".html");
                     eventFile.getParentFile().mkdirs();
                     try (Writer wr = new FileWriter(eventFile)) {
